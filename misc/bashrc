@@ -1,0 +1,55 @@
+# ==========================================================================================
+
+# ==========================================================================================
+#
+# GNU Screen
+
+### Start Screen Session at login
+# Use .screenrc file to change its behaviour
+#if [[ -z $STY && $TERM = 'xterm' ]]
+#then
+#        /opt/csw/bin/screen -ls | grep quentin > /dev/null 2>&1 && /opt/csw/bin/screen -x quentin || /opt/csw/bin/screen -S quentin -t main
+#fi
+#
+# ==========================================================================================
+#
+# Functions
+
+#source $HOME/.functions
+
+
+## ==========================================================================================
+#
+# Aliases
+
+#My own
+alias vi='vim'
+alias dig='dig +noquestion +nostats +nocomments +nocmd'
+
+#Auto-alias - Voir le README dans ~mariequ/bin/shell/scripts
+#for i in $(/usr/bin/ls $HOME/bin/shell/scripts/*.sh)
+#do 
+#        A=$(echo $i | sed -e "s/[^\/]*\///g;s/\([^_]*\)_.*/\1='\/users\/mariequ\/bin\/shell\/scripts\/&'/")
+#        alias $A 
+#done
+
+## ==========================================================================================
+#
+# Export Variables 
+
+#Prompt
+# 04.Apr|11:23|qmary|msrempart|~$
+#
+# Username = green
+# Hostname = yellow
+# Pathname = pink
+
+#export PS1='\D{%d.%b|%R}|\[\033[0;32m\]\u\[\033[0m\]|\[\033[0;33m\]\h\[\033[0m\]|\[\033[0;35m\]\w\[\033[0m\]\$ '
+#export PS1='\u|\h|\w\$ '
+export PS1='\D{%d.%b|%R}|\[\033[0;35m\]\w\[\033[0m\]\n\[\033[0;34m\]\u\[\033[0m\]|\[\033[0;31m\]\h\[\033[0m\]|\$ '
+
+export PATH=$PATH:/usr/sbin:/sbin:$HOME/bin
+
+#export TERM=xterm
+
+
