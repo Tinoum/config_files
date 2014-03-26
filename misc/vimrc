@@ -1,0 +1,31 @@
+" GNU Screen compatibility
+set term=cons25
+
+" Syntax color
+syntax on
+set background=dark
+
+" Status line
+set laststatus=2
+set statusline=
+set statusline +=%1*\ %n\ %*            "buffer number
+set statusline +=%5*%{&ff}%*            "file format
+set statusline +=%3*%y%*                "file type
+set statusline +=%4*\ %<%F%*            "full path
+set statusline +=%2*%m%*                "modified flag
+set statusline +=%1*%=%5l%*             "current line
+set statusline +=%2*/%L%*               "total lines
+set statusline +=%1*%4v\ %*             "virtual column number
+filetype plugin indent on       " autodetect filetype
+set backspace=indent,eol,start  " backspace for dummys
+set showmatch                   " show matching brackets/parenthesis
+set incsearch                   " find as you type search
+set hlsearch                    " highlight search terms
+set ignorecase                  " case insensitive search
+set smartcase                   " case sensitive when uc present
+set nowrap                      " wrap long lines
+set autoindent                  " indent at the same level of the previous line
+set shiftwidth=4                " use indents of 4 spaces
+set expandtab                   " tabs are spaces, not tabs
+set tabstop=4                   " an indentation every four columns
+set softtabstop=4               " let backspace delete indent
