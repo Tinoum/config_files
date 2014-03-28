@@ -1,0 +1,1961 @@
+#!/usr/bin/python
+import os,sys, getopt, re, platform, urllib, time
+
+SCRIPT_URL='http://mskickjump/lssan'
+CACHE_TIME=3*24*3600 # 3 days in seconds
+
+has_subprocess=True
+try:
+	import subprocess
+except ImportError, e:
+	print "Warning subprocess module is not present"
+	has_subprocess=False	
+
+
+EMC_ASCII_CODE=dict()
+EMC_ASCII_CODE["30"]="0"
+EMC_ASCII_CODE["31"]="1"
+EMC_ASCII_CODE["32"]="2"
+EMC_ASCII_CODE["33"]="3"
+EMC_ASCII_CODE["34"]="4"
+EMC_ASCII_CODE["35"]="5"
+EMC_ASCII_CODE["36"]="6"
+EMC_ASCII_CODE["37"]="7"
+EMC_ASCII_CODE["38"]="8"
+EMC_ASCII_CODE["39"]="9"
+EMC_ASCII_CODE["41"]="A"
+EMC_ASCII_CODE["42"]="B"
+EMC_ASCII_CODE["43"]="C"
+EMC_ASCII_CODE["44"]="D"
+EMC_ASCII_CODE["45"]="E"
+EMC_ASCII_CODE["46"]="F"
+
+HORCM_PREFIX="/opt/HORCM/usr/bin"
+
+PAIRDISPLAY=HORCM_PREFIX+'/pairdisplay'
+INQRAID=HORCM_PREFIX+'/inqraid'
+SYMPD='/usr/symcli/bin/sympd'
+SYMINQ='/usr/symcli/bin/syminq'
+
+FRIENDLY_BINDINGS="/etc/doesntexist"
+if not os.path.exists('/etc/multipath/bindings'):
+	if os.path.exists('/var/lib/multipath/bindings'):
+		FRIENDLY_BINDINGS="/var/lib/multipath/bindings"
+else:
+	FRIENDLY_BINDINGS="/etc/multipath/bindings"
+
+
+
+
+if os.path.exists('/usr/sbin/vgdisplay'):
+	VGDISPLAY='/usr/sbin/vgdisplay'
+elif os.path.exists('/sbin/vgdisplay'):
+	VGDISPLAY='/sbin/vgdisplay'
+
+
+crctab = [ 0x00000000, 0x04c11db7, 0x09823b6e, 0x0d4326d9, 0x130476dc,
+        0x17c56b6b, 0x1a864db2, 0x1e475005, 0x2608edb8, 0x22c9f00f,
+        0x2f8ad6d6, 0x2b4bcb61, 0x350c9b64, 0x31cd86d3, 0x3c8ea00a,
+        0x384fbdbd, 0x4c11db70, 0x48d0c6c7, 0x4593e01e, 0x4152fda9,
+        0x5f15adac, 0x5bd4b01b, 0x569796c2, 0x52568b75, 0x6a1936c8,
+        0x6ed82b7f, 0x639b0da6, 0x675a1011, 0x791d4014, 0x7ddc5da3,
+        0x709f7b7a, 0x745e66cd, 0x9823b6e0, 0x9ce2ab57, 0x91a18d8e,
+        0x95609039, 0x8b27c03c, 0x8fe6dd8b, 0x82a5fb52, 0x8664e6e5,
+        0xbe2b5b58, 0xbaea46ef, 0xb7a96036, 0xb3687d81, 0xad2f2d84,
+        0xa9ee3033, 0xa4ad16ea, 0xa06c0b5d, 0xd4326d90, 0xd0f37027,
+        0xddb056fe, 0xd9714b49, 0xc7361b4c, 0xc3f706fb, 0xceb42022,
+        0xca753d95, 0xf23a8028, 0xf6fb9d9f, 0xfbb8bb46, 0xff79a6f1,
+        0xe13ef6f4, 0xe5ffeb43, 0xe8bccd9a, 0xec7dd02d, 0x34867077,
+        0x30476dc0, 0x3d044b19, 0x39c556ae, 0x278206ab, 0x23431b1c,
+        0x2e003dc5, 0x2ac12072, 0x128e9dcf, 0x164f8078, 0x1b0ca6a1,
+        0x1fcdbb16, 0x018aeb13, 0x054bf6a4, 0x0808d07d, 0x0cc9cdca,
+        0x7897ab07, 0x7c56b6b0, 0x71159069, 0x75d48dde, 0x6b93dddb,
+        0x6f52c06c, 0x6211e6b5, 0x66d0fb02, 0x5e9f46bf, 0x5a5e5b08,
+        0x571d7dd1, 0x53dc6066, 0x4d9b3063, 0x495a2dd4, 0x44190b0d,
+        0x40d816ba, 0xaca5c697, 0xa864db20, 0xa527fdf9, 0xa1e6e04e,
+        0xbfa1b04b, 0xbb60adfc, 0xb6238b25, 0xb2e29692, 0x8aad2b2f,
+        0x8e6c3698, 0x832f1041, 0x87ee0df6, 0x99a95df3, 0x9d684044,
+        0x902b669d, 0x94ea7b2a, 0xe0b41de7, 0xe4750050, 0xe9362689,
+        0xedf73b3e, 0xf3b06b3b, 0xf771768c, 0xfa325055, 0xfef34de2,
+        0xc6bcf05f, 0xc27dede8, 0xcf3ecb31, 0xcbffd686, 0xd5b88683,
+        0xd1799b34, 0xdc3abded, 0xd8fba05a, 0x690ce0ee, 0x6dcdfd59,
+        0x608edb80, 0x644fc637, 0x7a089632, 0x7ec98b85, 0x738aad5c,
+        0x774bb0eb, 0x4f040d56, 0x4bc510e1, 0x46863638, 0x42472b8f,
+        0x5c007b8a, 0x58c1663d, 0x558240e4, 0x51435d53, 0x251d3b9e,
+        0x21dc2629, 0x2c9f00f0, 0x285e1d47, 0x36194d42, 0x32d850f5,
+        0x3f9b762c, 0x3b5a6b9b, 0x0315d626, 0x07d4cb91, 0x0a97ed48,
+        0x0e56f0ff, 0x1011a0fa, 0x14d0bd4d, 0x19939b94, 0x1d528623,
+        0xf12f560e, 0xf5ee4bb9, 0xf8ad6d60, 0xfc6c70d7, 0xe22b20d2,
+        0xe6ea3d65, 0xeba91bbc, 0xef68060b, 0xd727bbb6, 0xd3e6a601,
+        0xdea580d8, 0xda649d6f, 0xc423cd6a, 0xc0e2d0dd, 0xcda1f604,
+        0xc960ebb3, 0xbd3e8d7e, 0xb9ff90c9, 0xb4bcb610, 0xb07daba7,
+        0xae3afba2, 0xaafbe615, 0xa7b8c0cc, 0xa379dd7b, 0x9b3660c6,
+        0x9ff77d71, 0x92b45ba8, 0x9675461f, 0x8832161a, 0x8cf30bad,
+        0x81b02d74, 0x857130c3, 0x5d8a9099, 0x594b8d2e, 0x5408abf7,
+        0x50c9b640, 0x4e8ee645, 0x4a4ffbf2, 0x470cdd2b, 0x43cdc09c,
+        0x7b827d21, 0x7f436096, 0x7200464f, 0x76c15bf8, 0x68860bfd,
+        0x6c47164a, 0x61043093, 0x65c52d24, 0x119b4be9, 0x155a565e,
+        0x18197087, 0x1cd86d30, 0x029f3d35, 0x065e2082, 0x0b1d065b,
+        0x0fdc1bec, 0x3793a651, 0x3352bbe6, 0x3e119d3f, 0x3ad08088,
+        0x2497d08d, 0x2056cd3a, 0x2d15ebe3, 0x29d4f654, 0xc5a92679,
+        0xc1683bce, 0xcc2b1d17, 0xc8ea00a0, 0xd6ad50a5, 0xd26c4d12,
+        0xdf2f6bcb, 0xdbee767c, 0xe3a1cbc1, 0xe760d676, 0xea23f0af,
+        0xeee2ed18, 0xf0a5bd1d, 0xf464a0aa, 0xf9278673, 0xfde69bc4,
+        0x89b8fd09, 0x8d79e0be, 0x803ac667, 0x84fbdbd0, 0x9abc8bd5,
+        0x9e7d9662, 0x933eb0bb, 0x97ffad0c, 0xafb010b1, 0xab710d06,
+        0xa6322bdf, 0xa2f33668, 0xbcb4666d, 0xb8757bda, 0xb5365d03,
+        0xb1f740b4 ]
+
+UNSIGNED = lambda n: n & 0xffffffff
+
+def memcrc(b):
+    n = len(b)
+    i = c = s = 0
+    for ch in b:
+        c = ord(ch)
+        tabidx = (s>>24)^c
+        s = UNSIGNED((s << 8)) ^ crctab[tabidx]
+
+    while n:
+        c = n & 0377
+        n = n >> 8
+        s = UNSIGNED(s << 8) ^ crctab[(s >> 24) ^ c]
+    return UNSIGNED(~s)
+
+
+class ASM:
+	#Length of the longest value of each attribute (used for printing)
+	#this is class attributes
+	__max_disk_name=8
+	__max_disk_group=6
+	__max_disk_membership=10
+
+	def __init__(self,disk_name,disk_group,disk_membership):
+		self.disk_name=disk_name
+		self.disk_group=disk_group
+		self.disk_membership=disk_membership
+		ASM.__max_disk_name=max(ASM.__max_disk_name,len(self.disk_name))
+		ASM.__max_disk_group=max(ASM.__max_disk_group,len(self.disk_group))
+		ASM.__max_disk_membership=max(ASM.__max_disk_membership,len( str(self.disk_membership) ) )
+
+	def getMWdisk_name():
+		return str( ASM.__max_disk_name)
+	getMWdisk_name = staticmethod(getMWdisk_name)
+
+	def getMWdisk_group():
+		return str( ASM.__max_disk_group)
+	getMWdisk_group = staticmethod(getMWdisk_group)
+
+	def getMWmembership():
+		return str( ASM.__max_disk_membership)
+	getMWmembership = staticmethod(getMWmembership)
+	
+class Pair:
+	#Length of the longest value of each attribute (used for printing)
+	#this is class attributes
+	__max_group=5
+	__max_r_box=5
+	__max_r_lun_id=5
+	__max_status=4
+	__max_percent=3
+
+	def __init__(self,group,name):
+		self.group=group
+		self.name=name
+		self.box=""
+		self.lun_id=""
+		self.r_box=""
+		self.r_lun_id=""
+		self.status=""
+		self.percent=""
+
+	def setMaxColumnsWidth(self):
+		Pair.__max_group=max(Pair.__max_group,len(self.group) )
+		Pair.__max_r_box=max(Pair.__max_r_box,len(self.r_box) )
+		Pair.__max_r_lun_id=max( Pair.__max_r_lun_id, len(self.r_lun_id) )
+		Pair.__max_status=max( Pair.__max_status, len(self.status) )
+		Pair.__max_percent=max( Pair.__max_percent, len( self.percent ))
+
+	def getMWgroup():
+		return str( Pair.__max_group)
+	getMWgroup = staticmethod(getMWgroup)
+
+	def getMWr_box():
+		return str( Pair.__max_r_box)
+	getMWr_box = staticmethod(getMWr_box)
+
+	def getMWr_lun_id():
+		return str( Pair.__max_r_lun_id)
+	getMWr_lun_id = staticmethod(getMWr_lun_id)
+
+	def getMWstatus():
+		return str( Pair.__max_status)
+	getMWstatus = staticmethod(getMWstatus)
+
+	def getMWpercent():
+		return str( Pair.__max_percent )
+	getMWpercent = staticmethod(getMWpercent)
+
+	def set_local(self,box,lun_id):
+		self.box=box
+		self.lun_id=lun_id
+
+	def set_remote(self,box,lun_id):
+		self.r_box=box
+		self.r_lun_id=lun_id
+	
+	def set_status(self,status,percent):
+		self.status=status
+		self.percent=percent
+
+	def printPair(self):
+		print self.group, self.name, self.box, self.lun_id, self.r_box, self.r_lun_id
+
+class LVM:
+
+	#Length of the longest value of each attribute (used for printing)
+	#this is class attributes
+	__max_type=1
+	__max_group=6
+	__max_disk_name=8
+	__max_vm_device=9
+	__max_vm_status=9
+
+	def __init__(self,type,group,active,disk_name):
+		self.type=type
+		self.group=group
+		self.active=active
+		self.disk_name=disk_name
+		self.vm_device=""
+		self.vm_status=""
+
+	def setMaxColumnsWidth(self):
+		LVM.__max_type=max( LVM.__max_type, len(self.type))
+		LVM.__max_group=max( LVM.__max_group, len(self.group) )
+		LVM.__max_disk_name=max( LVM.__max_disk_name, len(self.disk_name) )
+		LVM.__max_vm_device=max( LVM.__max_vm_device, len(self.vm_device) )
+		LVM.__max_vm_status=max( LVM.__max_vm_status, len(self.vm_status) )
+
+	def getMWtype():
+		return str( LVM.__max_type)
+	getMWtype = staticmethod(getMWtype)
+
+	def getMWgroup():
+		return str( LVM.__max_group)
+	getMWgroup = staticmethod(getMWgroup)
+
+	def getMWdisk_name():
+		return str( LVM.__max_disk_name )
+	getMWdisk_name = staticmethod(getMWdisk_name)
+
+	def getMWvm_device():
+		return str( LVM.__max_vm_device)
+	getMWvm_device = staticmethod(getMWvm_device)
+
+	def getMWvm_status():
+		return str( LVM.__max_vm_status)
+	getMWvm_status = staticmethod(getMWvm_status)
+
+	def setExtraVM(self,vm_device,vm_status):
+		self.vm_device=vm_device
+		self.vm_status=vm_status
+		
+
+class Multipath:
+	#Length of the longest value of each attribute (used for printing)
+	#this is class attributes
+	__max_name=6          #Set to 3 by default which the width of the label 'LUN'
+	__max_paths=7
+	__max_paths_ok=3
+	__max_paths_total=4
+
+	def __init__(self,name,paths,paths_ok,paths_total):
+		self.name=name
+		self.paths=paths
+		self.paths_ok=paths_ok
+		self.paths_total=paths_total
+
+	def setMaxColumnsWidth(self):
+		Multipath.__max_name=max(Multipath.__max_name,len( self.name) )
+		Multipath.__max_paths=max(Multipath.__max_paths, len(self.paths) )
+		Multipath.__max_paths_ok=max( Multipath.__max_paths_ok, len(str(self.paths_ok)) )
+		Multipath.__max_paths_total=max( Multipath.__max_paths_total, len(str(self.paths_total)) )
+
+	def getMWname():
+		return str( Multipath.__max_name)
+	getMWname = staticmethod(getMWname)
+
+	def getMWpaths():
+		return str( Multipath.__max_paths)
+	getMWpaths = staticmethod(getMWpaths)
+
+	def getMWpaths_ok():
+		return str( Multipath.__max_paths_ok)
+	getMWpaths_ok = staticmethod(getMWpaths_ok)
+
+	def getMWpaths_total():
+		return str( Multipath.__max_paths_total)
+	getMWpaths_total = staticmethod(getMWpaths_total)
+
+
+class Lun:
+
+	#Length of the longest value of each attribute (used for printing)
+	#this is class attributes
+	__max_lun_id=3          #Set to 3 by default which the width of the label 'LUN'
+	__max_os_device=15
+	__max_size=4
+	__max_box=3
+	__max_TC=2
+	__max_SI_PVOL=5
+	__max_SI_SVOL=5
+
+	def __init__(self,lun_id, box, os_device,TC, SI_PVOL,SI_SVOL):
+		'''initialyze a Lun '''
+		self.os_device=os_device
+		self.size=0
+		self.lun_id=lun_id
+		self.box=box
+		self.TC=TC
+		self.SI_PVOL=SI_PVOL
+		self.SI_SVOL=SI_SVOL
+		self.pair_info=None
+		self.lvm_info=None
+		self.mpath_info=None
+		self.asm_info=None
+
+	def setMaxColumnsWidth(self):
+		Lun.__max_lun_id=max(Lun.__max_lun_id, len(str(self.lun_id)) ) 
+		Lun.__max_os_device=max( Lun.__max_os_device, len(self.os_device))
+		Lun.__max_size=max( Lun.__max_size, len(str(self.size)))
+		Lun.__max_box=max( Lun.__max_box, len(self.box))
+		Lun.__max_TC=max( Lun.__max_TC, len(self.TC))
+		Lun.__max_SI_PVOL=max( Lun.__max_SI_PVOL, len(str(self.SI_PVOL)))
+		Lun.__max_SI_SVOL=max( Lun.__max_SI_SVOL, len(str(self.SI_SVOL)))
+
+		if not self.pair_info is None:
+			self.pair_info.setMaxColumnsWidth()
+
+		if not self.lvm_info is None:
+			self.lvm_info.setMaxColumnsWidth()
+
+		if not self.mpath_info is None:
+			self.mpath_info.setMaxColumnsWidth()
+
+	def getMWlun_id():
+		return str( Lun.__max_lun_id)
+	getMWlun_id = staticmethod(getMWlun_id)
+
+	def getMWos_device():
+		return str( Lun.__max_os_device)
+	getMWos_device = staticmethod(getMWos_device)
+
+	def getMWsize():
+		return str( Lun.__max_size)
+	getMWsize = staticmethod(getMWsize)
+
+	def getMWbox():
+		return str( Lun.__max_box)
+	getMWbox = staticmethod(getMWbox)
+
+	def getMWTC():
+		return str( Lun.__max_TC)
+	getMWTC = staticmethod(getMWTC)
+
+	def getMWSI_PVOL():
+		return str( Lun.__max_SI_PVOL)
+	getMWSI_PVOL = staticmethod(getMWSI_PVOL)
+
+	def getMWSI_SVOL():
+		return str( Lun.__max_SI_SVOL)
+	getMWSI_SVOL = staticmethod(getMWSI_SVOL)
+
+	def getDGName(self):
+		if not self.lvm_info is None:
+			return self.lvm_info.group
+		else:
+			return "-"
+
+	def getDGStatus(self):
+		if not self.lvm_info is None:
+			return self.lvm_info.active
+		else:
+			return "-"
+
+	def getDiskName(self):
+		if not self.lvm_info is None:
+			return self.lvm_info.disk_name
+		else:
+			return "-"
+
+	def getOsDevice(self):
+		return self.os_device
+
+	def getLunID(self):
+		return self.lun_id
+	
+	def getSize(self):
+		return self.size
+
+	def getBox(self):
+		return self.box
+
+	def getTC(self):
+		return self.TC
+	
+	def getSI_PVOL(self):
+		return self.SI_PVOL
+
+	def getSI_SVOL(self):
+		return self.SI_SVOL
+
+	def getTC_Group(self):
+		if not self.pair_info is None:
+			return self.pair_info.group
+		else:
+			return "-"
+
+	def getTC_Name(self):
+		if not self.pair_info is None:
+			return self.pair_info.name
+		else:
+			return "-"
+
+	def getR_Box(self):
+		if not self.pair_info is None:
+			return self.pair_info.r_box
+		else:
+			return "-"
+
+	def getR_LunID(self):
+		if not self.pair_info is None:
+			return self.pair_info.r_lun_id
+		else:
+			return "-"
+
+	def getTC_status(self):
+		if not self.pair_info is None:
+			return self.pair_info.status
+		else:
+			return "-"
+
+	def getTC_percent(self):
+		if not self.pair_info is None:
+			return self.pair_info.percent
+		else:
+			return "-"
+	
+	def getMpathName(self):
+		if not self.mpath_info is None:
+			return self.mpath_info.mpath_name
+		else:
+			return "-"
+
+	def getMpathPaths(self):
+		if not self.mpath_info is None:
+			return self.mpath_info.paths
+		else:
+			return "-"
+
+	def getMpathPathsOK(self):
+		if not self.mpath_info is None:
+			return self.mpath_info.paths_ok
+		else:
+			return "-"
+
+	def getMpathPathsTotal(self):
+		if not self.mpath_info is None:
+			return self.mpath_info.paths_total
+		else:
+			return "-"
+
+	def getVMDevice(self):
+		if not self.lvm_info is None:
+			return self.lvm_info.vm_device
+		else:
+			return "-"
+
+	def getVMStatus(self):
+		if not self.lvm_info is None:
+			return self.lvm_info.vm_status
+		else:
+			return "-"
+
+	def getASMDG(self):
+		if not self.asm_info is None:
+			return self.asm_info.diskgroup
+		else:
+			return "-"
+
+	def getASMDisk(self):
+		if not self.asm_info is None:
+			return self.asm_info.diskname
+		else:
+			return "-"
+
+	def getASMMembership(self):
+		if not self.asm_info is None:
+			return self.asm_info.disk_membership
+		else:
+			return "-"
+
+	def hex_lun_id(lun_id):
+		''' Convert a LunID in decimal format to hex format with ":" separator'''	
+		hex_string="%04x" % int(lun_id)
+		result=hex_string[:2]+':'+hex_string[2:4]
+
+		return result
+	hex_lun_id = staticmethod(hex_lun_id)
+
+	def printHeader(fields,batch):
+		#(ansemitan) - c4t60060E80054306000000430600000545d0s2 17158 05:45 ansemitan S-VOL PAIR 100 17233 05:45
+		if batch:
+			return
+
+		to_print=list()
+		for item in fields:
+			if item == 'lvm_type':
+				to_print.append("-")
+			if item == 'lvm_dg':
+				to_print.append("LVM_DG")
+			if item == 'lvm_disk':
+				to_print.append("LVM_DISK")
+			if item == 'os_device':
+				to_print.append("OS_device_name")
+			if item == 'box':
+				to_print.append("Box")
+			if item == 'lun_id':
+				to_print.append("LunID")
+			if item == 'tc_dg':
+				to_print.append("TC_DG")
+			if item == 'tc':
+				to_print.append("TC")
+			if item == 'tc_status':
+				to_print.append("TC_S")
+			if item == 'tc_percent':
+				to_print.append("TC%")
+			if item == 'r_box':
+				to_print.append("R_Box")
+			if item == 'r_lunid':
+				to_print.append("R_LID")
+			if item == 'si_pvol':
+				to_print.append("#SI_P")
+			if item == 'si_svol':
+				to_print.append("#SI_S")
+			if item == 'size':
+				to_print.append("Size")
+			if item == 'mpath_name':
+				to_print.append("M name")
+			if item == 'paths':
+				to_print.append("M paths")
+			if item == 'paths_ok':
+				to_print.append("#OK")
+			if item == 'paths_total':
+				to_print.append("#Tot")
+			if item == 'vm_device':
+				to_print.append("VM device")
+			if item == 'vm_status':
+				to_print.append("VM status")
+			if item == 'asm_dg':
+				to_print.append("ASM DG")
+			if item == 'asm_disk':
+				to_print.append("ASM Disk")
+			if item == 'asm_membership':
+				to_print.append("ASM Member")
+
+		format=Lun.getOutputFormat(fields,batch)
+		print >> sys.stderr, format[0]  % tuple(to_print)
+		print >> sys.stderr, '-' * format[1]
+
+	printHeader = staticmethod(printHeader)
+
+
+	def isActive(self):
+		''' Return True is the lun is in an active VG/DG/pool, False otherwise '''
+		if not self.lvm_info is None:
+			return self.lvm_info.active
+		else:
+			return False
+		
+	def getOutputFormat(fields,batch ):
+		output_format=""
+		width=0
+
+		sep=""
+		if not batch:
+			sep=" |"
+			width=len(fields)*3
+
+		for item in fields:
+			if item == 'lvm_type':
+				value=LVM.getMWtype()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+			if item == 'lvm_dg':
+				value=LVM.getMWgroup()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'lvm_disk':
+				value=LVM.getMWdisk_name()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'size':
+				value=Lun.getMWsize()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'os_device':
+				value=Lun.getMWos_device()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'box':
+				value=Lun.getMWbox()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'lun_id':
+				value=Lun.getMWlun_id()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'tc_dg':
+				value=Pair.getMWgroup()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'tc':
+				value=Lun.getMWTC()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'tc_status':
+				value=Pair.getMWstatus()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'tc_percent':
+				value=Pair.getMWpercent()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'r_box':
+				value=Pair.getMWr_box()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'r_lunid':
+				value=Pair.getMWr_lun_id()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'si_pvol':
+				value=Lun.getMWSI_PVOL()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'si_svol':
+				value=Lun.getMWSI_SVOL()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'mpath_name':
+				value=Multipath.getMWname()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'paths':
+				value=Multipath.getMWpaths()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'paths_ok':
+				value=Multipath.getMWpaths_ok()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'paths_total':
+				value=Multipath.getMWpaths_total()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'vm_device':
+				value=LVM.getMWvm_device()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'vm_status':
+				value=LVM.getMWvm_status()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'asm_disk':
+				value=ASM.getMWdisk_name()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'asm_dg':
+				value=ASM.getMWdisk_group()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+			if item == 'asm_membership':
+				value=ASM.getMWmembership()
+				output_format+=' %'+value+'s'+sep
+				width+=int(value)
+
+		return (output_format,width)
+
+	getOutputFormat=staticmethod(getOutputFormat)
+
+		
+
+	def printLun(self,fields,batch):
+		to_print=list()
+		for item in fields:
+			if item == 'lvm_type':
+				if not self.lvm_info is None:
+					to_print.append(self.lvm_info.type)
+				else:
+					to_print.append("-")
+			if item == 'lvm_dg':
+				if not self.lvm_info is None:
+					to_print.append(self.lvm_info.group)
+				else:
+					to_print.append("-")
+
+			if item == 'lvm_disk':
+				if not self.lvm_info is None:
+					to_print.append(self.lvm_info.disk_name)
+				else:
+					to_print.append("-")
+
+			if item == 'vm_device':
+				if not self.lvm_info is None:
+					to_print.append(self.lvm_info.vm_device)
+				else:
+					to_print.append("-")
+
+			if item == 'vm_status':
+				if not self.lvm_info is None:
+					to_print.append(self.lvm_info.vm_status)
+				else:
+					to_print.append("-")
+
+			if item == 'size':
+				to_print.append(self.size)
+
+			if item == 'os_device':
+				to_print.append(self.os_device)
+
+			if item == 'box':
+				to_print.append(self.box)
+
+			if item == 'lun_id':
+				to_print.append(self.hex_lun_id(self.lun_id))
+
+
+			if item == 'mpath_name':
+				if not self.mpath_info is None:
+					to_print.append(self.mpath_info.name)
+				else:
+					to_print.append("-")
+
+			if item == 'paths':
+				if not self.mpath_info is None:
+					to_print.append(self.mpath_info.paths)
+				else:
+					to_print.append("-")
+
+			if item == 'paths_ok':
+				if not self.mpath_info is None:
+					to_print.append(self.mpath_info.paths_ok)
+				else:
+					to_print.append("-")
+
+			if item == 'paths_total':
+				if not self.mpath_info is None:
+					to_print.append(self.mpath_info.paths_total)
+				else:
+					to_print.append("-")
+
+			if item == 'asm_disk':
+				if not self.asm_info is None:
+					to_print.append(self.asm_info.disk_name)
+				else:
+					to_print.append("-")
+
+			if item == 'asm_dg':
+				if not self.asm_info is None:
+					to_print.append(self.asm_info.disk_group)
+				else:
+					to_print.append("-")
+
+			if item == 'asm_membership':
+				if not self.asm_info is None:
+					to_print.append(self.asm_info.disk_membership)
+				else:
+					to_print.append("-")
+
+			if '-VOL' in self.TC or 'RDF' in self.TC:
+				if self.pair_info is None:
+				#We have a *-VOL but no pair_info, it MAY means that the device has HUR device (without TC) or a missconfiguration of horcm* daemon
+					if item == 'tc_dg':
+						to_print.append("(none)HUR?")
+					if item == 'tc':
+						to_print.append("-")
+					if item == 'tc_status':
+						to_print.append("-")
+					if item == 'tc_percent':
+						to_print.append("-")
+					if item == 'r_box':
+						to_print.append("-")
+					if item == 'r_lunid':
+						to_print.append("-")
+				else:
+					if item == 'tc_dg':
+						to_print.append(self.pair_info.group)
+					if item == 'tc':
+						to_print.append(self.TC)
+					if item == 'tc_status':
+						to_print.append(self.pair_info.status)
+					if item == 'tc_percent':
+						to_print.append(self.pair_info.percent)
+					if item == 'r_box':
+						to_print.append(self.pair_info.r_box)
+					if item == 'r_lunid':
+						to_print.append(self.hex_lun_id(self.pair_info.r_lun_id))
+			else:
+				if item == 'tc_dg':
+					to_print.append("-")
+				if item == 'tc':
+					to_print.append("-")
+				if item == 'tc_status':
+					to_print.append("-")
+				if item == 'tc_percent':
+					to_print.append("-")
+				if item == 'r_box':
+					to_print.append("-")
+				if item == 'r_lunid':
+					to_print.append("-")
+
+			if item == 'si_pvol':
+				to_print.append(str(self.SI_PVOL))
+			if item == 'si_svol':
+				to_print.append(str(self.SI_SVOL))
+
+		print Lun.getOutputFormat(fields,batch)[0] % tuple(to_print)
+
+	def setPairInfo(self,r_box,r_lun_id):
+		self.r_box=r_box
+		self.r_lun_id=r_lun_id
+
+def get_basic_EMC_info(san_info):
+	''' Get EMC informations from syminq -v command'''
+	print 'Getting basic EMC informations (syminq -v), please be patient'
+
+	if not os.path.exists(SYMINQ):
+		return san_info
+
+	file=os.popen(SYMINQ+ ' -v' )
+        line=""
+	while True:
+		lun_id="0"
+		srdf_device_state='-'
+		device_status='-'
+		array_id="-"
+		device="-"
+		dev_type="-"
+		size="-"
+
+		if not 'Device Physical Name' in line:
+			line=file.readline()
+			if len(line) == 0:
+				break
+		else:
+			device=line.split(':')[1].rstrip('\n')
+			line=file.readline()
+			if len(line) == 0:
+				break
+
+			while not 'Device Physical Name' in line:
+				if 'Vendor ID' in line:
+					vendor=line.split(':')[1].rstrip('\n').lstrip()
+
+				elif 'Product ID' in line:
+					product=line.split(':')[1].rstrip('\n').lstrip()
+
+				elif 'Capacity (in KB)' in line:
+					size=round(float(line.split(':')[1].rstrip('\n'))/1024/1024)
+
+				elif 'Device Clariion Name' in line or 'Device Symmetrix Name' in line:
+					lun_id=line.split(':')[1].rstrip('\n').lstrip()
+					if type(lun_id) != type(int()):
+						lun_id=lun_id.split(" ")[0].rstrip()
+
+				elif '12-digit Symmetrix ID' in line:
+					temp=line.split(':')[1].rstrip('\n').strip()
+					array_id=temp[len(temp)-4:len(temp)]
+
+                                elif 'Clariion ID' in line:
+					temp=line.split(':')[1].rstrip('\n')
+					array_id=temp[len(temp)-4:len(temp)]
+
+				elif '  Device Type' in line:
+					dev_type=line.split(':')[1].rstrip('\n')
+					if 'REGULAR' in dev_type:
+						dev_type='REGU'
+
+				line=file.readline()
+				if len(line) == 0:
+					break
+
+			if 'mapper' in device or 'dmp' in device: #REmoving the multipath entries
+				continue
+
+			if len(lun_id) == 0:
+				lun_id="0"
+
+			#Removing devices which are not EMC or Clariion (DGC) ones. 
+			if vendor not in ('EMC','DGC'):
+				continue
+
+			if product in ('LUNZ'):
+				lun_id="0"
+
+			device=os.path.basename(device)
+
+			if san_info.has_key(device):
+				san_info[device].lun_id=str(int(lun_id,16))
+				san_info[device].box=str(array_id)+'(E)'
+				if size < 1: # It's a Gatekeeper
+					san_info[device].TC="CMD"
+					san_info[device].lvm_info=LVM('-','GK', False, device)
+				else:
+					san_info[device].TC=dev_type
+			else:
+				san_info[device]=Lun(str(int(lun_id,16)),str(array_id)+'(E)',device,dev_type,0,0)
+				if product in ('LUNZ'):
+					san_info[device].TC="CMD"
+					san_info[device].lvm_info=LVM('-','LUNZ', False, device)
+
+			san_info[device].size=size
+	return san_info
+
+
+def get_full_EMC_info(san_info):
+	''' Get EMC informations from sympd -v list command'''
+	print 'Getting EMC informations (sympd -v list), please be patient'
+
+	if not os.path.exists(SYMPD):
+		return san_info
+	file=os.popen(SYMPD+ ' -v list' )
+	line=""
+	while True:
+		lun_id="-"
+		mode="-"
+		remote_lun_id='-'
+		remote_array_id='-'
+		srdf_device_state='-'
+		device_status='-'
+		ra_group="-"
+		array_id="-"
+		device="-"
+		dev_type="-"
+		size="-"
+		rdf_state="-"
+
+
+		if not 'Device Physical Name' in line:
+			line=file.readline()
+			if len(line) == 0:
+				break
+		else:
+			device=line.split(':')[1].rstrip('\n')
+
+			line=file.readline()
+			if len(line) == 0:
+				break
+			while not 'Device Physical Name' in line:
+				if 'Device Capacity' in line:
+					while not 'KiloBytes' in line:
+						line=file.readline()
+					size=round(float(line.split(':')[1].rstrip('\n'))/1024/1024)
+				elif '  Device Symmetrix Name' in line:
+					lun_id=line.split(':')[1].rstrip('\n').lstrip()
+					if type(lun_id) != type(int()):
+						lun_id=lun_id.split(" ")[0].rstrip()
+
+				elif 'RDF (RA) Group Number' in line:
+					ra_group=line.split(':')[1].rstrip('\n').split()[0]
+
+				elif '  Symmetrix ID' in line:
+					temp=line.split(':')[1].rstrip('\n')
+					array_id=temp[len(temp)-5:len(temp)]
+
+				elif 'Device Configuration' in line:
+					dev_type=line.split(':')[1].rstrip('\n').strip()
+					if '+' in dev_type:
+						dev_type=dev_type.split('+')[0]
+					else:
+						if 'RAID-5' in dev_type or '2-Way Mir' in dev_type:
+							dev_type='REGU'
+						else:
+							if len(dev_type.split(' ')) > 1:
+								dev_type=dev_type.split(" ")[1]
+
+				elif 'RDF Mode' in line:
+					mode=line.split(':')[1].rstrip('\n')
+
+				elif 'Remote Device Symmetrix Name' in line:
+					remote_lun_id=line.split(':')[1].rstrip('\n')
+
+				elif 'Remote Symmetrix ID' in line:
+					temp=line.split(':')[1].rstrip('\n')
+					remote_array_id=temp[len(temp)-4:len(temp)]
+
+				elif 'RDF Pair State' in line:
+					rdf_state=line.split(':')[1].rstrip('\n')
+
+				elif '  Device RDF State' in line:
+					temp=line.split(':')[1].rstrip('\n')
+					srdf_device_state=temp[len(temp)-4:len(temp)]
+
+				elif 'State of Session' in line:
+					rdf_state=line.split(':')[1].rstrip('\n')
+					mode='Clone'
+
+				line=file.readline()
+				if len(line) == 0:
+					break
+
+			if 'mapper' in device or 'dmp' in device: #REmoving the multipath entries
+				continue
+
+			device=os.path.basename(device)
+			if not san_info.has_key(device):
+				san_info[device]=Lun(str(int(lun_id,16)),str(array_id)+'(E)',device,dev_type,0,0)
+				san_info[device].size=size
+
+			if 'RDF' in dev_type:
+				my_pair=Pair("-","-")
+				my_pair.set_local( array_id, str(int(lun_id,16)) )
+				my_pair.set_status(rdf_state,"-")
+				my_pair.set_remote( str(remote_array_id), str(int(remote_lun_id,16)) )
+				san_info[device].pair_info=my_pair
+
+	return san_info
+
+def get_pairdisplay():
+
+	global PAIRDISPLAY
+	horcm_conf='/etc/horcm.conf'
+	#Check if horcm.conf file exists
+	if not os.path.exists('/etc/horcm.conf'):
+		#Check if we have a 100 instance (VCS cluster)
+		if os.path.exists('/etc/horcm100.conf'):
+			horcm_conf='/etc/horcm100.conf'
+			PAIRDISPLAY+=' -I100 '
+		else:
+			return None
+
+
+	#parse the horcm.conf file to find all the  group names of the pairs
+	pair_groups={}
+	horcm_conf=open(horcm_conf)
+	line=""
+	while True:
+		if not re.match('[ 	]*HORCM_LDEV',line) is None:
+			line=horcm_conf.readline()
+			if len(line) == 0:
+				break
+			while not re.match('[ 	]*HORCM',line):
+				if  len( line.split() ):
+					gr=line.split()[0]
+					if re.match('[ 	]*#',line) is None:
+						pair_groups[ line.split()[0] ]=1
+				line=horcm_conf.readline()
+				if len(line) == 0:
+					break
+
+			break
+
+		line=horcm_conf.readline()
+		if len(line) == 0:
+			break
+
+	# Now we will lauch pairdisplay on each group and store
+	all_pairs={}
+	all_pairs_by_local_lun={}
+	for pair_group in pair_groups.keys():
+		output=os.popen(PAIRDISPLAY+' -g '+pair_group+ ' -fce')
+		line=" "
+		while True:
+			if len(line) == 0:
+				break
+			if 'PairVol(L/R)' in line or not re.match('[ 	]*#',line) is None:
+				line=output.readline()
+
+			#typical line:
+			#lucca   lucca_020(L) (CL3-B-13, 5,  13)17158  4635.P-VOL PAIR NEVER ,  100  4635 -   -   -  4  -            -       -
+
+			split_line=line.split()
+			if len( split_line) > 0 :
+				long_pair_name=split_line[1]	
+				short_pair_name=re.sub("\(.*\)","",long_pair_name)
+
+				if not all_pairs.has_key(short_pair_name):
+					all_pairs[short_pair_name]=Pair(split_line[0],short_pair_name)
+
+				#We remove the (.*) as the number of the number of space depends on values. 
+				split_line=re.sub("\(.*\)"," ",line).split()
+
+				box=split_line[2]
+				lun_id=split_line[3].split(".")[0]
+
+				if 'P-VOL' in split_line[3].split(".")[1]:
+				#We get the status and percent from the PVOL device
+					status=split_line[4]
+					percent=split_line[7]
+					all_pairs[short_pair_name].set_status(status,percent)
+
+				if '(L)' in long_pair_name:
+					all_pairs[short_pair_name].set_local(box,lun_id)
+					#We get the status from the local device (percent value is set on local)
+					all_pairs_by_local_lun[box+lun_id]=all_pairs[short_pair_name]
+				else:
+					all_pairs[short_pair_name].set_remote(box,lun_id)
+
+
+			line=output.readline()
+
+	return all_pairs_by_local_lun
+
+def get_linux_basic_info(san_info):
+
+	partitions=open( '/proc/partitions' , 'r')
+	partitions.readline() #skip the first line
+	for line in partitions.readlines():
+		split_line=line.split()
+		if len(split_line) > 2:
+			lun_id=0
+			os_device=split_line[3]
+			#Check if it's not a partition (ending with a number)
+			if re.search(r'[0-9]$',os_device) is None:
+				size=round( int(split_line[2]) / 1024.0 /1024,2)
+				vendor=open('/sys/block/'+os_device+'/device/vendor', 'r').readline().rstrip("\n").rstrip(" ")
+				model=open('/sys/block/'+os_device+'/device/model', 'r').readline().rstrip("\n").rstrip(" ")
+				if not san_info.has_key(os_device):
+					san_info[os_device]=Lun(lun_id,vendor+'+'+model,os_device,"-",0,0)
+					san_info[os_device].size=size
+	partitions.close()
+
+	return san_info
+
+				
+def get_solaris_basic_info(san_info):
+	iostat_output=os.popen( 'iostat -En' ).read().replace('\n',' ')
+	for item in iostat_output.split("Analysis"):
+		lun_re=re.search(r'(.*)(c.*d0)(.*Vendor:)(.+)(Product:)(.+)(Revision.*Size:.*<)([0-9]+)(.*Failure)',item)
+		if not lun_re is None:
+			os_device=lun_re.groups()[1]+'s2'
+			lun_id="0"
+			vendor=lun_re.groups()[3].rstrip(" ").lstrip(" ")
+			size=lun_re.groups()[7]
+			if "EMC" in vendor:
+				lunid_re=re.search(r'(c?t)(60060480|60000970)(.{12})(.{12})(d0s2)',os_device)
+				if not lunid_re is None:
+					box_id=lunid_re.groups()[2][7:12]+'(E)'
+					full_lun_id=lunid_re.groups()[3]
+					lun_id=EMC_ASCII_CODE[ full_lun_id[2:4] ]+ EMC_ASCII_CODE[ full_lun_id[4:6] ] + EMC_ASCII_CODE[ full_lun_id[6:8] ] + EMC_ASCII_CODE[ full_lun_id[8:10] ] + EMC_ASCII_CODE[ full_lun_id[10:12] ]
+			else:
+				lunid_re=re.search(r'(c?t.*)(....)(d0s2)',os_device)
+				if not lunid_re is None:
+					lun_id=lunid_re.groups()[1]
+				model=lun_re.groups()[5].rstrip(" ").lstrip(" ")
+				box_id=vendor+'+'+model
+
+			if not san_info.has_key(os_device):
+				san_info[os_device]=Lun(int(lun_id,16),box_id,os_device,"-",0,0)
+				san_info[os_device].size=round( int(size) / 1024.0 / 1024 /1024 , 2)
+
+	return san_info
+
+
+def get_inqraid( pairs_info):
+	inqraid_info={}
+	luns_size={}
+	if platform.system() == 'SunOS':
+		#When the module is available, we use subprocess.Popen instead of os.popen 
+		# to avoid mixing of stdout & stderr when using  2>&1 
+		if has_subprocess:
+			result=subprocess.Popen('ls /dev/rdsk/*s2 | '+INQRAID,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).communicate()
+			list_luns=re.split( '/dev/rdsk/', result[0]+result[1])
+		else:
+			list_luns=re.split( '/dev/rdsk/',os.popen('ls /dev/rdsk/*s2 | '+INQRAID +' 2>&1').read())
+
+		iostat_output=os.popen( 'iostat -En' ).read().replace('\n',' ')
+		for item in iostat_output.split("Analysis"):
+			size_re=re.search(r'(.*)(c.*d0)(.*Size:.*<)([0-9]+)(.*Failure)',item)
+			if not size_re is None:
+				luns_size[ size_re.groups()[1]+'s2' ] = round( int(size_re.groups()[3]) / 1024.0 / 1024 /1024 , 2)
+
+	elif platform.system() == 'Linux':
+		#When the module is available, we use subprocess.Popen instead of os.popen 
+		# to avoid mixing of stdout & stderr when using  2>&1 
+		if has_subprocess:
+			result=subprocess.Popen('ls /dev/sd* | '+INQRAID,shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).communicate()
+			list_luns=re.split( '/dev/', result[0]+result[1])
+		else:
+			list_luns=re.split( '/dev/',os.popen('ls /dev/sd* | '+INQRAID +' 2>&1').read())
+
+		partitions=open( '/proc/partitions' , 'r')
+		partitions.readline() #skip the first line
+		for line in partitions.readlines():
+			split_line=line.split()
+			if len(split_line) > 2:
+				luns_size[split_line[3] ]= round( int(split_line[2]) / 1024.0 /1024,2)
+		partitions.close()
+
+	for lun in list_luns:
+		lun=lun.replace('\n', ' ')
+
+		#If it's an EMC device, we skip the device. 
+		if 'EMC' in lun:
+			continue
+		#Then we check if it's a CMD device
+		if platform.system() == 'SunOS':
+			lun_re=re.search(r'(c.*s2)(.+Ser *= *)([0-9]+)(.*LDEV *= *)([0-9]+)(.+\[OPEN-V-CM)',lun)
+		elif platform.system() == 'Linux':
+			lun_re=re.search(r'(sd[a-z]+)(.+Ser *= *)([0-9]+)(.*LDEV *= *)([0-9]+)(.+\[OPEN-V-CM)',lun)
+
+		if not lun_re is None:
+			os_device=lun_re.groups()[0]
+			box=lun_re.groups()[2]
+			lun_id=lun_re.groups()[4]
+
+			if not inqraid_info.has_key( os_device ):
+				inqraid_info[ os_device ]=Lun(lun_id,box,os_device,"CMD",0,0)
+				inqraid_info[ os_device ].lvm_info=LVM('-','CMD-DEV', False, "-")
+
+		#Now we can check if it's a "standard" device	
+		if platform.system() == 'SunOS':
+			lun_re=re.search(r'(c.*s2)(.+Ser *= *)([0-9]+)(.*LDEV *= *)([0-9]+)(.*HORC *= *)([A-Z,-]+)(.*HOMRCF\[)(.*L])',lun)
+		elif platform.system() == 'Linux':
+			lun_re=re.search(r'(sd[a-z]+)(.+Ser *= *)([0-9]+)(.*LDEV *= *)([0-9]+)(.*HORC *= *)([A-Z,-]+)(.*HOMRCF\[)(.*L])',lun)
+		if not lun_re is None:
+			nb_SI_PVOL=len( re.findall('P-VOL',lun_re.groups()[8]) )
+			nb_SI_SVOL=len( re.findall('S-VOL',lun_re.groups()[8]) )
+			os_device=lun_re.groups()[0]
+			box=lun_re.groups()[2]
+			lun_id=lun_re.groups()[4]
+			
+			TC=lun_re.groups()[6]
+
+			if not inqraid_info.has_key( os_device ):
+
+				inqraid_info[ os_device ]=Lun(lun_id,box,os_device,TC,nb_SI_PVOL,nb_SI_SVOL)
+				if not pairs_info is None:
+				#Pairs_info may be empty if we have no TC or HUR
+					if pairs_info.has_key(box+lun_id):
+						inqraid_info[ os_device].pair_info=pairs_info[box+lun_id]
+		else:
+			#It's not CMD device nor an HITACHI device. We try to get as many information as possible
+			if platform.system() == 'SunOS':
+				lun_re=re.search(r'(c.*s2)(.*\[)(.+)(\].*\[)(.+)(\])',lun)
+			elif platform.system() == 'Linux':
+				lun_re=re.search(r'(sd[a-z]+)(.*\[)(.+)(\].*\[)(.+\])(\])',lun)
+			if not lun_re is None:
+				os_device=lun_re.groups()[0]
+				vendor=lun_re.groups()[2].rstrip(" ")
+				model=lun_re.groups()[4].rstrip(" ")
+				lun_id=0
+				lunid_re=re.search(r'(c?t.*)(....)(d0s2)',os_device)
+				if not lunid_re is None:
+					lun_id=int(lunid_re.groups()[1],16)
+				if not inqraid_info.has_key( os_device ):
+					inqraid_info[ os_device ] = Lun(lun_id,vendor+'+'+model,os_device,"-",0,0)
+	
+	#Create the dictionnary on the osdevice field and add the size values
+	for lun in inqraid_info.values():
+		if luns_size.has_key( lun.os_device ):
+			lun.size=luns_size[ lun.os_device ]
+		
+	return inqraid_info
+	
+
+def get_vxvm(inqraid_info):
+
+	#If vx is not installed, silently do nothing
+	if not os.path.exists('/usr/sbin/vxdisk'):
+		return
+
+	output=os.popen('/usr/sbin/vxdisk -e -o alldgs list')
+	line=" "
+	while True:
+		if len(line) == 0:
+			break
+		if 'OS_NATIVE_NAME' in line:
+			line=output.readline()
+
+		#typical line :
+		#GENESIS0_2   auto      lorrain_1150_FS  lorrain      online       c4t60060E80054306000000430600001150d0s2
+
+		#Before splitting, we replace "online invalid" by online_invalid" to have the same columns count in all the cases
+		# id for online thinrclm
+		line=line.replace("online invalid","online_invalid")
+		line=line.replace("online thinrclm","online_thinrclm")
+		line=line.replace("online clone_disk","online_clone_disk")
+
+		split_line=line.split()
+
+		if len(split_line):
+			active=not '(' in split_line[3] and not '-' in split_line[3] 
+			os_device= split_line[ 5 ]
+
+			if inqraid_info.has_key(os_device):
+				inqraid_info[ os_device ].lvm_info=LVM( 'VxVM',split_line[3], active, split_line[2] )
+				inqraid_info[ os_device ].lvm_info.setExtraVM(split_line[0],split_line[4])
+
+		line=output.readline()
+
+def get_vxvm_linux(inqraid_info):
+
+	#If vx is not installed, silently do nothing
+	if not os.path.exists('/sbin/vxdisk'):
+		return inqraid_info
+
+	#same thing with vxdmpadm
+	if not os.path.exists('/sbin/vxdmpadm'):
+		print "vxdmpadm command is not available, no VX informations will be gathered"
+		return inqraid_info
+
+
+	#First thing, we create a new dict 
+	subpaths2device={}
+	for lun in inqraid_info.values():
+		if not lun.mpath_info is None:
+			for path in lun.mpath_info.paths.split(","):
+				if not lun.lvm_info is None:
+					subpaths2device[path]=lun.lvm_info.disk_name
+				else:
+					subpaths2device[path]=lun.os_device
+
+	#We get the lun_id, dmp name and number of paths from the vxdmpadm list dmpnode command
+	#The results are added to the inqraid dictionnary. At this stage, we still have an entry for each
+	#OS device
+	out_vxdmpadm=os.popen('/sbin/vxdmpadm list dmpnode').read().split('\n\n')
+	for lun in out_vxdmpadm:
+
+		lun_id="0000"
+		dmpdev=""
+		total_paths=0
+
+		match_re=re.search(r'(dmpdev.*=)(.*)(\n)',lun,re.MULTILINE )
+		if not match_re is None:
+			dmpdev=match_re.groups()[1].strip(' ')
+
+		match_re=re.search(r'(vid.*=)(.*)(\n)',lun,re.MULTILINE )
+		if not match_re is None:
+			disk_type=match_re.groups()[1].strip(' ')
+
+		match_re=re.search(r'(cab-sno.*=)(.*)(\n)',lun,re.MULTILINE )
+		if not match_re is None:
+			box=match_re.groups()[1].strip(' ')
+			box_id=box[len(box)-5:]+"(E)"
+
+		match_re=re.search(r'(avid.*=)(.*)(\n)',lun , re.MULTILINE )
+		if not match_re is None:
+			lun_id=match_re.groups()[1].strip(' ')
+			if "-" in lun_id:
+				lun_id=0
+		
+		match_re=re.search(r'(num_paths.*=)(.*)(\n)',lun , re.MULTILINE )
+		if not match_re is None:
+			total_paths=match_re.groups()[1].strip(' ')
+
+		#Here is  a typical output of re.findall ( we use findall instead of match because we can have multiple lines
+		# one by path)
+		# [('path\t\t=', ' sdf enabled(a) - FC c5 c5 9f-a - -', '\n'), ('path\t\t=', ' sdo enabled(a) - FC c6 c6 8f-a - -', '')]
+		paths=re.findall(r'(^path\t\t=)(.*)(\n|$)',lun,re.MULTILINE)
+		nb_paths_ok=0
+		#We count the Enabled paths
+		for subpath in paths:
+			if "enabled" in subpath[1]:
+				nb_paths_ok+=1
+
+		#For each subpath, we add the informations in the inqraid dictionnary
+		for subpath in paths:
+			path_os_device=subpath[1].split()[0]
+
+			if subpaths2device.has_key(path_os_device):
+				os_device=subpaths2device[path_os_device]
+			else:
+				os_device=path_os_device
+
+			if inqraid_info.has_key(os_device):
+				inqraid_info[os_device].lun_id=int(str(lun_id),16)
+				if "EMC" in disk_type:
+					 inqraid_info[os_device].box=box_id
+				if inqraid_info[os_device].mpath_info is None:
+					inqraid_info[os_device].mpath_info=Multipath(dmpdev,os_device,nb_paths_ok,total_paths)
+				else:
+					inqraid_info[os_device].mpath_info.name=dmpdev	
+					if path_os_device not in inqraid_info[os_device].mpath_info.paths:
+						inqraid_info[os_device].mpath_info.paths+=','+path_os_device
+
+	#Now that we have the dmp name of each physical path, we can remove duplicate entries 
+	dmp_info={}
+	for lun in inqraid_info.values():
+		if not lun.mpath_info is None:
+			if not dmp_info.has_key(lun.mpath_info.name):
+				dmp_info[lun.mpath_info.name]=lun
+			else:
+				dmp_info[lun.mpath_info.name].mpath_info.paths+=","+lun.os_device
+
+			lun.os_device=lun.mpath_info.name
+		else:
+			#If the device is not under Vx, we add it using the os_device key
+			dmp_info[lun.os_device]=lun
+			  
+
+	#Now we can add the VG informations
+	output=os.popen('/usr/sbin/vxdisk -e -o alldgs list')
+	line=" "
+	while True:
+		if len(line) == 0:
+			break
+		if 'OS_NATIVE_NAME' in line:
+			line=output.readline()
+
+		#typical line :
+		#emc0_601a    auto:cdsdisk   -            (slpwtxibo01) online thinrclm      sdf              tprclm srdf-r2
+
+		#Before splitting, we replace "online invalid" by online_invalid" to have the same columns count in all the cases
+		# id for online thinrclm
+		line=line.replace("online invalid","online_invalid")
+		line=line.replace("online thinrclm","online_thinrclm")
+		line=line.replace("online clone_disk","online_clone_disk")
+
+		split_line=line.split()
+
+		if len(split_line):
+			active=not '(' in split_line[3] and not '-' in split_line[3] 
+			dmpname= split_line[ 0 ]
+
+			if dmp_info.has_key(dmpname):
+				dmp_info[ dmpname ].lvm_info=LVM( 'VxVM',split_line[3], active, split_line[2] )
+				dmp_info[ dmpname ].lvm_info.setExtraVM(split_line[0],split_line[4])
+
+		line=output.readline()
+	return dmp_info
+
+
+def get_zfs(inqraid_info):
+
+	for subcommand in ['status','import']:
+		zpools=os.popen('zpool '+subcommand).read().split('pool:')
+		#If we run zpool status, then the pool is active, inactive if import is run
+		active='status' in subcommand 
+
+		#We skip the first element which is empty
+		del zpools[0]
+
+		for pool in zpools:
+			pool_split=pool.split()
+
+			pool_name=pool_split[0]
+			del pool_split[0]
+
+			for device in pool_split:
+				#Sometimes we have the full path of the device in the zpool output
+				#Dont ask why ...
+				if '/dev/' in device: 
+					device=os.path.basename(device)
+
+				# disks in rpool are added with s0 name, so we need to replace with s2 to have match with the device list
+				if 's0' in device:
+					device=device.replace('s0','s2')
+				match_re=re.search(r'(c[0-9]t.*d[0-9]+)(.*)',device)
+				if 's2' not in device:
+					device+='s2'
+				if not match_re is None:
+					if inqraid_info.has_key(device):
+						if inqraid_info[device].lvm_info is None:
+							inqraid_info[device].lvm_info=LVM( 'ZFS',pool_name, active, '')
+						else:
+							if inqraid_info[device].lvm_info.group == '-':
+								#VxVm has seen the disk but don't use it
+								inqraid_info[device].lvm_info=LVM( 'ZFS',pool_name, active, '')
+							else:
+								print "Ouch the device "+ device+ " is already used by another LVM ("+inqraid_info.lvm_info.type+") DG name" +inqraid_info.lvm_info.name
+
+
+					
+	
+		
+def get_lvm(inqraid_info):
+	#Get the list of active VG
+	active_vg=list()
+	vgdisplay_output=os.popen(VGDISPLAY+' -c 2>/dev/null')
+
+	for line in vgdisplay_output.readlines():
+		vgdisplay=line.split(':')
+		if int(vgdisplay[6]) != 0:
+			active_vg.append(vgdisplay[0].strip())
+
+	#Get the VG of each PV
+	vg_info={}
+	pvscan_output=os.popen('/sbin/pvscan 2>/dev/null')
+	for line in pvscan_output.readlines():
+		if 'unknown device' in line:
+			print >> sys.stderr, "!!! LVM configuration is messed up, you should you have a look at it before doing anything !!! "
+			continue
+		if ' lvm2 ' in line or ' lvm1 ' in line:
+			info=line.split()
+			pvname=info[1].split('/')[info[1].count('/')]
+
+			#If only a slice of the PV is in LVM, we have to remove the partition info
+			#otherwise the whole PV will be seen as free ...
+			pvname_re=re.search(r'(.*)(p[0-9])',pvname)
+			if not pvname_re is None:
+				pvname=pvname_re.groups()[0]
+
+			if info[2] == 'VG':
+				if info[3] in active_vg:
+					vg_info[ pvname  ]= info[3]
+				else:
+					vg_info[  pvname ]= "("+info[3]+")"
+			else:
+				vg_info[  info[1].split('/')[info[1].count('/')] ]= '-'
+			
+	#Generate a conversion table between /dev/sd* name and major-minor and major-minor and /dev/sd*
+	major_minor_sd={}
+	sd_major_minor={}
+	partitions=open( '/proc/partitions' , 'r')
+	for line in partitions.readlines():
+		split_line=line.split()
+		if len(split_line) > 2:
+			major_minor_sd[split_line[0]+':'+split_line[1] ]=split_line[3]
+			sd_major_minor[ split_line[3] ] = split_line[0]+':'+split_line[1]
+	partitions.close()
+			
+	dm_wwn={}
+	wwn_dm={}
+	dmsetup_ls_output=os.popen( '/sbin/dmsetup ls --target multipath')
+	for line in dmsetup_ls_output.readlines():
+		split_line=line.split()
+		dm_wwn[ 'dm-'+ split_line[2].rstrip(')')] = split_line[0]
+		wwn_dm[ split_line[0] ] =  'dm-'+ split_line[2].rstrip(')')
+
+
+	#If we use friendly names, we have to get the wwn and friendly name from /etc/multipath/bindings
+	friendly_wwn={}
+	if os.path.exists( FRIENDLY_BINDINGS ):
+		m_bindings=open(FRIENDLY_BINDINGS, 'r')
+		for line in m_bindings.readlines():
+			if re.search(r'^#',line) is None :
+				split_line=line.split()
+				friendly_wwn[ split_line[0] ]=split_line[1]
+
+			
+	dmsetup_output=os.popen('/sbin/dmsetup status --target multipath')
+	for line in dmsetup_output.readlines():
+		split_line=line.split()
+		wwn=split_line[0].rstrip(':')
+
+		#We remove the first element, because there is a : in it and it would be easier for the next loop
+		split_line.pop(0)
+		
+		iter_split_line=iter(split_line)
+		for item in iter_split_line:
+			if ':' in item:
+			#We get the major:minor of the subpath, then we get the /dev/sd* name associated 
+				if not major_minor_sd.has_key( item):
+					print '/!\ ERROR /!\ Can\'t get the /dev/sd* name of the device with WWN: '+ wwn
+					print '/!\ ERROR /!\ Something may be f*cked somewhere in the multipath config'
+					continue
+				if inqraid_info.has_key( major_minor_sd[item] ):
+					type=""
+					if vg_info.has_key( wwn ):
+						type='LVM'
+						vg_name=vg_info[wwn]
+					elif vg_info.has_key( wwn_dm[wwn] ):
+						type='LVM'
+						vg_name=vg_info[ wwn_dm[wwn] ]
+					elif inqraid_info[ major_minor_sd[item] ].TC=="CMD": 
+					#We check if it's a CMD device
+						type="-"
+						vg_name="CMD-DEV"
+					else:
+						#Check if it's an ASM disk
+						#We use the device map to check for ASM informations because on the physical paths
+						# informations may not be synced
+						asm_info=get_asm_info("/dev/mapper/"+wwn )
+						if asm_info is not None:
+							type='ASM'
+							vg_name=asm_info.disk_group
+							inqraid_info[ major_minor_sd[item] ].asm_info=asm_info
+						else:
+							type='LVM'
+							vg_name='n/a'						
+					inqraid_info[ major_minor_sd[item] ].lvm_info=LVM( type,vg_name, type == 'ASM' or vg_name in active_vg,wwn_dm[wwn])
+
+	#Now we need to aggregate the devices by multipath map name (because we have 1 os_device for each SAN path)
+	inqraid_info_map_name={}
+	for lun in inqraid_info.values():
+		if not lun.lvm_info is None:
+		#If the lun has LVM infos
+			if inqraid_info_map_name.has_key(lun.lvm_info.disk_name):
+			#If the LUN is already in the target dictionnary
+				inqraid_info_map_name[lun.lvm_info.disk_name].os_device+=","+lun.os_device
+			else:
+				if lun.lvm_info.group == "CMD-DEV":
+					inqraid_info_map_name[lun.os_device]=lun
+				else:
+					inqraid_info_map_name[lun.lvm_info.disk_name]=lun
+		else:
+		#If the LUN has no LVM info, we add it but with the os_device name
+			inqraid_info_map_name[lun.os_device]=lun
+
+	#We can now add the multipath informations
+	dmsetup_output=os.popen('/sbin/dmsetup status --target multipath')
+	for line in dmsetup_output.readlines():
+		split_line=line.split()
+		wwn=split_line[0].rstrip(':')
+
+		#We remove the first element, because there is a : in it and it would be easier for the next loop
+		split_line.pop(0)
+
+		
+		if inqraid_info_map_name.has_key(wwn_dm[wwn]):
+			lun=inqraid_info_map_name[ wwn_dm[wwn] ]
+
+			iter_split_line=iter(split_line)
+			paths=""
+			paths_ok=0
+			paths_total=0
+			for item in iter_split_line:
+				if ':' in item:
+					paths_total+=1
+					next_item=iter_split_line.next()
+					if next_item   == 'A':
+						if len(paths)>0:
+							paths+=","+major_minor_sd[item]
+						else:
+							paths=major_minor_sd[item]
+
+						paths_ok+=1
+					if next_item   == 'F':
+						if len(paths) > 0:
+							paths+=',*'+major_minor_sd[item]+'*'
+						else:
+							paths='*'+major_minor_sd[item]+'*'
+						
+
+			lun.mpath_info=Multipath(wwn,paths,paths_ok,paths_total)
+			#Now that we have the WWN of LUNs we can check again LUNs with lun_id=0 
+			#and try to find lun_id and box_id with the WWN
+			if lun.lun_id == 0:
+				if friendly_wwn.has_key(wwn):
+					wwn=friendly_wwn[wwn]
+				wwn_re=re.search(r'(^360060480|^360000970)(.{12})(.{12})',wwn)
+				if not wwn_re is None:
+				#It's an EMC device
+					box_id=wwn_re.groups()[1][7:12]+'(E)'
+					full_lun_id=wwn_re.groups()[2]
+					lun_id=EMC_ASCII_CODE[ full_lun_id[2:4] ]+ EMC_ASCII_CODE[ full_lun_id[4:6] ] + EMC_ASCII_CODE[ full_lun_id[6:8] ] + EMC_ASCII_CODE[ full_lun_id[8:10] ] + EMC_ASCII_CODE[ full_lun_id[10:12] ]
+
+					lun.lun_id=int(lun_id,16)
+					lun.box=box_id
+				wwn_re=re.search(r'(^3600a0b80|^360060E80|^360060e80)(.{20})(.{4})',wwn)
+				if not wwn_re is None:
+				#It's a STK device or  AMS device or maybe HDS
+					lun.lun_id=int(wwn_re.groups()[2],16)
+					if "OPEN" in lun.box:
+						lun.box=str(int('0x'+wwn[21:25],16))
+
+	return inqraid_info_map_name
+
+def get_mpxio_info(inqraid_info):
+	#Add the MPXIO informations 
+
+	mpxio_info=os.popen('/usr/sbin/mpathadm list lu').read().split('/dev/rdsk/')
+	#['\t', 'c3t60060E80164E260000014E2600001C2Bd0s2\n\t\tTotal Path Count: 1\n\t\tOperational Path Count: 1\n\t', 'c3t60060E80164E260000014E2600001C2Fd0s2\n\t\tTotal Path Count: 1\n\t\tOperational Path Count: 1\n\t']
+
+	#Remove the first element
+	del mpxio_info[0]
+
+	for mpath in mpxio_info:
+		total=0
+		active=0
+
+		mpath_split=mpath.split('\n')
+		device=mpath_split[0]
+		#['c3t60060E80164E260000014E2600001C2Bd0s2', '\t\tTotal Path Count: 1', '\t\tOperational Path Count: 1', '\t']
+
+		for mpath in mpath_split:
+			if 'Total Path Count' in mpath:
+				total=int( mpath.split(':')[1] )
+			if 'Operational Path Count' in mpath:
+				active=int( mpath.split(':')[1] )
+
+		if inqraid_info.has_key(device):
+			inqraid_info[device].mpath_info=Multipath(device,'-',active,total)
+
+def check_updates(force):
+	# Check if there is a newer version available
+
+	#if the file is older than CACHE_TIME or we forced the update
+	if ( os.stat(sys.argv[0]).st_mtime < (time.time() - CACHE_TIME) ) or force:
+		
+		print "Checking for a new version"
+		temp_file=urllib.urlretrieve (SCRIPT_URL)[0]
+
+		if  memcrc( open(temp_file,'r').read() ) != memcrc( open(sys.argv[0],'r').read() ):
+			os.unlink(sys.argv[0])
+			open(sys.argv[0],'w').write( open(temp_file,'r').read() )
+			os.unlink(temp_file)
+			os.chmod(sys.argv[0],0755)
+
+			print sys.argv[0]+' has been updated, executing the new version'
+			os.system( " ".join(["%s" % el for el in sys.argv ]) )
+			sys.exit(0)
+		os.unlink(temp_file)
+		print "No update found"
+
+def filter_non_printable(str):
+	return ''.join([c for c in str if ord(c) > 31 or ord(c) == 9])
+
+def get_asm_info(path):
+	infos=None
+	has_parts=False
+	partitions=[]
+
+	#Check if we have partitions on the disk
+	kpartx=os.popen("kpartx -l "+path)
+	for line in kpartx.readlines():
+		partitions.append(os.path.dirname(path)+os.sep+line.split(":")[0].rstrip())
+		has_parts=True
+
+	if len(partitions) == 0:
+		partitions.append(path)
+		
+		
+	for part in partitions:
+		file=open(part, "r")
+		try:
+			try:
+				signature = file.read(512)
+				disk_type=signature[32:40]
+				if disk_type == "ORCLDISK":
+					disk_number=ord(signature[68])
+					redundency=ord(signature[70])
+					disk_membership=ord(signature[71]) == 3
+					disk_name=filter_non_printable(signature[72:103])
+					disk_group=filter_non_printable(signature[104:135])
+					infos=ASM(disk_name,disk_group,disk_membership)
+			except IOError :
+				print 'WARNING - BE CAREFUL I can\'t check device '+part+' for ASM information, it may be an ASM disk'
+				continue
+		finally:
+			file.close()
+	#if there is no ASM signature but we have a partition, then it may be a disk not already integreted in ASM by DBAs 
+	#so flag it as ASM as well 
+	if infos is None and has_parts:
+		infos=ASM("not_used_yet","not_used_yet",False)
+
+	return infos
+
+		
+def usage():
+	print "Syntax: "+sys.argv[0]+" [-a][-t][-o field[,field,..]][-k field][-h] [DG/zpool/VG_NAME]"
+	print "-h|--help: print usage message"
+	print "-a : print informations on all devices (even in non active LVM VG)"
+	print "-b : don't print header and remove columns separator"
+	print "-c : add the cmd devices/GK in the output"
+	print "-t : print TrueCopy/ShadowImage informations"
+	print "-m : print multipahting informations"
+	print "-o field[,field,..] : print the specified fields"
+	print "field values are lvm_type, lvm_dg, lvm_disk, os_device, box, lun_id, tc_dg, tc, tc_status, tc_percent, r_box, r_lunid, si_pvol, si_svol, size, mpath_name, paths, paths_ok, paths_total, vm_device, vm_status, asm_dg, asm_disk,asm_membership"
+	print "-k : sort the LUNs by the column name <field> ( same values as -o option)"
+	print "-u : force update"
+	print "-x : add some VxVM extra info"
+	print "-A : add ASM info"
+	print "-X : Skip update check"
+	
+#MAIN 
+
+
+fields_std=['lvm_type','lvm_dg','lvm_disk','os_device','size','box','lun_id']
+fields_extra_vm=['vm_device','vm_status']
+fields_TC=['tc','tc_dg','tc_status','tc_percent','r_box','r_lunid','si_pvol','si_svol']
+fields_ASM=['asm_dg','asm_disk','asm_membership']
+
+if platform.system() == 'SunOS':
+	fields_mpath=['paths_ok','paths_total']
+else:
+	fields_mpath=['mpath_name','paths','paths_ok','paths_total']
+
+all_fields=fields_std+fields_TC+fields_mpath+fields_extra_vm+fields_ASM
+
+fields_to_print=fields_std
+only_active=True
+print_filter=""
+sort_column=""
+batch=False
+cmd_dev=False
+mpath=False
+no_update=False
+force_update=False
+remote_info=False
+
+try:
+	opts, args = getopt.getopt(sys.argv[1:], "Aabck:htmo:uxX",['--help'])
+except getopt.GetoptError:
+        usage()
+        sys.exit(2)
+
+for opt, arg in opts:
+	if opt in ('-t'):
+		fields_to_print.extend(fields_TC)
+		remote_info=True
+	if opt in ('-m'):
+		mpath=True
+		fields_to_print.extend(fields_mpath)
+	if opt in ('-A'):
+		fields_to_print.extend(fields_ASM)
+	elif opt in ('-a'):
+		only_active=False
+	elif opt in ('-b'):
+		batch=True
+	elif opt in ('-c'):
+		cmd_dev=True
+	elif opt in ('-x'):
+		fields_to_print.extend(fields_extra_vm)
+	elif opt in ('-X'):
+		no_update=True
+	elif opt in ('-u'):
+		force_update=True
+	elif opt in ('-k'):
+		if arg not in all_fields:
+			print " arg not a valid column name, ignoring -k option"
+		else:
+			sort_column=arg
+		
+	elif opt in ('-h','--help'):
+		usage()
+		sys.exit()
+	elif opt in ('-o'):
+		fields_to_print = arg.split(',')
+		for item in fields_to_print:
+                        if item not in all_fields:
+                                print( item + ' is not a valid column name, ignoring it')
+                                continue
+			if item in fields_mpath:
+				mpath=True
+
+if len(args) != 0:
+	print_filter=args[0]
+
+#if not no_update:
+#	check_updates(force_update)
+
+
+san_info={}
+if os.path.exists( INQRAID ):
+	pairs_info=get_pairdisplay()
+	san_info=get_inqraid(pairs_info)
+else:
+	print INQRAID+" command not found, trying to get basic informations"
+
+if platform.system() == 'SunOS':
+	san_info=get_solaris_basic_info(san_info)
+else:
+	san_info=get_linux_basic_info(san_info)
+
+san_info=get_basic_EMC_info(san_info)
+
+if remote_info:
+	san_info=get_full_EMC_info(san_info)
+
+if platform.system() == 'SunOS':
+	get_vxvm(san_info)
+	get_zfs(san_info)
+	if mpath:
+		get_mpxio_info(san_info)
+else:
+	san_info=get_lvm(san_info)
+	san_info=get_vxvm_linux(san_info)
+
+sorted_san_info=san_info.values()
+if sort_column=="" or sort_column == 'lvm_dg':
+	sorted_san_info.sort(lambda x,y: cmp(x.getDGName() ,y.getDGName()) )
+elif sort_column=='lvm_disk':
+	sorted_san_info.sort(lambda x,y: cmp(x.getDiskName() ,y.getDiskName()) )
+elif sort_column=='os_device':
+	sorted_san_info.sort(lambda x,y: cmp(x.getOsDevice() ,y.getOsDevice()) )
+elif sort_column=='size':
+	sorted_san_info.sort(lambda x,y: cmp(x.getSize() ,y.getSize()) )
+elif sort_column=='box':
+	sorted_san_info.sort(lambda x,y: cmp(x.getBox() ,y.getBox()) )
+elif sort_column=='lun_id':
+	sorted_san_info.sort(lambda x,y: cmp(x.getLunID() ,y.getLunID()) )
+elif sort_column=='tc_dg':
+	sorted_san_info.sort(lambda x,y: cmp(x.getTC_Group() ,y.getTC_Group()) )
+elif sort_column=='tc':
+	sorted_san_info.sort(lambda x,y: cmp(x.getTC() ,y.getTC()) )
+elif sort_column=='tc_status':
+	sorted_san_info.sort(lambda x,y: cmp(x.getTC_status() ,y.getTC_status()) )
+elif sort_column=='tc_percent':
+	sorted_san_info.sort(lambda x,y: cmp(x.getTC_percent() ,y.getTC_percent()) )
+elif sort_column=='r_box':
+	sorted_san_info.sort(lambda x,y: cmp(x.getR_Box() ,y.getR_Box()) )
+elif sort_column=='r_lunid':
+	sorted_san_info.sort(lambda x,y: cmp(x.getR_LunID() ,y.getR_LunID()) )
+elif sort_column=='si_pvol':
+	sorted_san_info.sort(lambda x,y: cmp(x.getSI_PVOL() ,y.getSI_PVOL()) )
+elif sort_column=='si_svol':
+	sorted_san_info.sort(lambda x,y: cmp(x.getSI_SVOL() ,y.getSI_SVOL()) )
+elif sort_column=='mpath_name':
+	sorted_san_info.sort(lambda x,y: cmp(x.getMpathName() ,y.getMpathName()) )
+elif sort_column=='paths':
+	sorted_san_info.sort(lambda x,y: cmp(x.getMpathPaths() ,y.getMpathPaths()) )
+elif sort_column=='paths_ok':
+	sorted_san_info.sort(lambda x,y: cmp(x.getMpathPathsOK() ,y.getMpathPathsOK()) )
+elif sort_column=='paths_total':
+	sorted_san_info.sort(lambda x,y: cmp(x.getMpathPathsTotal() ,y.getMpathPathsTotal()) )
+elif sort_column=='vm_device':
+	sorted_san_info.sort(lambda x,y: cmp(x.getVMDevice() ,y.getVMDevice()) )
+elif sort_column=='vm_status':
+	sorted_san_info.sort(lambda x,y: cmp(x.getVMStatus() ,y.getVMStatus()) )
+elif sort_column=='asm_dg':
+	sorted_san_info.sort(lambda x,y: cmp(x.getASMDG() ,y.getASMDG()) )
+elif sort_column=='asm_disk':
+	sorted_san_info.sort(lambda x,y: cmp(x.getASMDisk() ,y.getASMDisk()) )
+elif sort_column=='asm_membership':
+	sorted_san_info.sort(lambda x,y: cmp(x.getASMMembership() ,y.getASMMembership()) )
+	
+lun_to_print=list()
+
+for i in sorted_san_info:
+	if i.TC=="CMD" and not cmd_dev:
+		continue
+	if only_active:
+		if i.isActive():
+			if print_filter != "":
+				if i.getDGName() == print_filter:
+					lun_to_print.append(i)
+					i.setMaxColumnsWidth()
+			else:
+				lun_to_print.append(i)
+				i.setMaxColumnsWidth()
+	else:
+		lun_to_print.append(i)
+		i.setMaxColumnsWidth()
+
+Lun.printHeader(fields_to_print,batch)
+for i in lun_to_print:
+	i.printLun(fields_to_print,batch)

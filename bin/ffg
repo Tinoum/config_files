@@ -1,0 +1,6 @@
+#! /bin/bash
+
+SEARCH=$@
+FF=/usr/bin/firefox
+
+$FF -new-tab www.google.com/search?q="$SEARCH"

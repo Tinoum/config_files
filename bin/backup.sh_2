@@ -1,0 +1,8 @@
+#! /bin/bash
+
+SERVER=$1
+BACKUP_DIR=$2
+DATE=`/usr/bin/date +%Y%m%d`
+RSYNC='rsync'
+
+$RSYNC -avz --delete --backup --backup-dir=$BACKUP_DIR/deleted/$SERVER -e "ssh -q -i /home/quentin/.ssh/id_dsa_rsync" mariequ@ms$SERVER:/users/mariequ/ $BACKUP_DIR/$SERVER 

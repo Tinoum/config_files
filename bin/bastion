@@ -1,0 +1,29 @@
+#! /bin/bash
+
+SERV=''
+
+function usage {
+	echo "
+Usage: $0 -d|-r
+With 	-d: Start ssh to donjon
+	-r: Start ssh to rempart
+"
+	exit 1
+}
+
+if [[ $# -eq 1 ]]
+then
+	while getopts "dr" OPT
+	do
+		case $OPT in
+		d) SERV=msdonjon ;;
+		r) SERV=msrempart ;;
+		*) usage ;;
+		esac
+	done
+else
+	usage
+fi
+
+[[ -z $SERV ]] && usage || urxvt -bg [80]black -fg white -name "$SERV" -e ssh mariequ@$SERV &
+
