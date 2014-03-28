@@ -1,0 +1,52 @@
+# Display windows list at the bottom of the screen
+hardstatus alwayslastline
+hardstatus string '%{= 9G}[%= %{= 9w}%-w%{+b Bw} %n*%t%?(%u)%? %{-}%+w %=%{g}]'
+
+# No welcome message
+startup_message off
+
+# Buffer size
+defscrollback 1000
+
+# Setting $TERM to xterm
+term xterm
+
+# Mouse wheel support
+termcapinfo xterm ti@:te@
+
+# Search in buffer
+bindkey "^f" eval "copy" "stuff ?"
+
+# Set the window's number
+#bindkey "^n" eval "number " 
+
+# Register macro here
+register m "^aa"
+register n ^aan
+register p ^aap
+register w "^aa\""
+register s "^aa'"
+register o ^aa^aa
+register f ^aa0
+
+# New bind to use screenception
+bindkey "^[a" eval "process m"
+
+# Change main screen window
+bindkey "^[Od" eval "prev"
+bindkey "^[Oc" eval "next"
+
+# Group 3 : Nav (F9 to F12 keys)
+bindkey "^[[20~" eval "process w" #Display the list of all opened windows
+bindkey "^[[20;2~" eval "process s" #Prompt for the window you want to go to
+bindkey "^[[33~" eval "process s" #Prompt for the window you want to go to
+bindkey "^[[21~" eval "process o" #Come back to previous viewed window
+bindkey "^[[21;2~" eval "process f" #Come back to main window
+bindkey "^[[34~" eval "process f" #Come back to main window
+bindkey "^[[23~" eval "process p" #Go to previous window in the list
+bindkey "^[[24~" eval "process n" #Go to next window in the list
+
+
+# Log each window in its own file
+logfile $HOME/screen_log/%Y%m%d_%n_%t.log
+deflog on
