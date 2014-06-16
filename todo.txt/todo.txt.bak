@@ -1,0 +1,16 @@
+(C) Demande vol si besoin +ICD000626513 @mspbkubdd01  - En attente du CP
+(C) Demande vol si besoin +ICD000626149 @slpdfrora343a  - En attente du CP
+(B) Ajout/Augmentation +ICD000623530 @slpwmqsfi01
+(C) Attente vol (RINF0002585) +ICD000621688 @msgipddb01
+(A) 2014-06-13 Faire demande d'ouverture flux pour David @KIOSQUE
+(A) 2014-06-16 Demande de support pour Linux/Solaris sur Production - Installation de produit/logiciel sur un serveur +ICD000572384  - A faire (qualif)
+(C) 2014-06-16 Augmentation du file system /dev/vx/dsk/slpwtxlfc01/apps-cf7 +ICD000621112  - En attente du CP - En attente du CP
+(A) 2014-06-16 Perte d'un chemin sur la machine slpora16 +ICD000619351   - Renvoyer coter SAN
+(C) 2014-06-16 manque de place +ICD000617500   - Attente retour utilisateur
+(B) 2014-06-16 [CONTROLM] augmentation du FS /msctpdctmec/sgbd/SX_TP_CTEC/backup +ICD000616735  - Augmentation a faire
+(B) 2014-06-16 TDPO : slpdfrora370a/b pour OLP3703A/B et OLP3704A/B +ICD000615143   - A faire
+(A) 2014-06-16 Problème de configuration des disques ASM  +ICD000612008   - Faire demande de 2 disques ASM
+(A) 2014-06-16 IT agrandissement de FS sur serveurs de qualification +ICD000580261  - Faire les demandes manquantes
+(A) 2014-06-16 IT Agrandissement de FS sur serveurs de prod.  +ICD000580131  - Faire les demandes manquantes
+(Z) 2014-06-16 Alerte MUT_ALTAIR de type EXPLOIT : ADSM sur le serveur s181000intf +ICD000577330 
+(A) 2014-06-16 Perte des flux vers la DMZ 2380 +ICD000572384   - Faire demande ouverture des flux admin
