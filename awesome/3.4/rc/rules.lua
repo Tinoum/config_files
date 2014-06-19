@@ -31,6 +31,9 @@ awful.rules.rules = {
     { rule = { instance = "urxvt" },
       properties = { tag = tags[1][3],
                      switchtotag = true } },
+    { rule = { instance = "x11-ssh-askpass" },
+      properties = { tag = tags[1][3],
+                     switchtotag = true } },
 }
 -- }}}
 
